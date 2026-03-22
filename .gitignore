@@ -1,0 +1,45 @@
+# GCP credentials
+terraform/keys/
+dbt/*.json
+*service-account*.json
+*.keyfile.json
+
+# Terraform state
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/terraform.tfstate.*
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+dbt/profiles.yml       # keep profiles out of the repo; use ~/.dbt/profiles.yml
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+
+# Local data / temp
+/tmp/
+data/*.parquet
+data/*.csv
+!dbt/seeds/*.csv       # dbt seeds ARE committed
+
+# Kestra local runtime files
+kestra_data/
+
+# IDE
+.vscode/
+.idea/
+*.DS_Store
