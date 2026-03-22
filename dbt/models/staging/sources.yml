@@ -1,0 +1,52 @@
+version: 2
+
+sources:
+  - name: industrial_twin_raw
+    description: "5 raw tables written by the Spark batch job"
+    database: "{{ env_var('DBT_PROJECT_ID', 'industrial-twin-pipeline') }}"
+    schema: industrial_twin_raw
+    tables:
+
+      - name: telemetry
+        description: "One row per machine per 2-minute interval. 262,800 rows. Partitioned by date."
+        config:
+          loaded_at_field: loaded_at
+          freshness:
+            error_after: {count: 400, period: day}
+        columns:
+          - name: timestamp
+            tests: [not_null]
+          - name: machine_id
+            tests: [not_null]
+          - name: label_anomaly
+            tests: [not_null]
+
+      - name: failures
+        description: "139 discrete failure events across all machines in 2025."
+        columns:
+          - name: failure_id
+            tests: [not_null, unique]
+          - name: machine_id
+            tests: [not_null]
+          - name: timestamp_occurrence
+            tests: [not_null]
+
+      - name: maintenance
+        description: "552 maintenance events, both planned and reactive."
+        columns:
+          - name: maintenance_id
+            tests: [not_null, unique]
+          - name: machine_id
+            tests: [not_null]
+
+      - name: orders
+        description: "31,324 production orders with planned vs actual timestamps."
+        columns:
+          - name: order_id
+            tests: [not_null, unique]
+
+      - name: demand
+        description: "365 daily demand forecast rows for 2025."
+        columns:
+          - name: date
+            tests: [not_null, unique]

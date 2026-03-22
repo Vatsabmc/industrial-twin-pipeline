@@ -1,0 +1,138 @@
+version: 2
+
+# ═══════════════════════════════════════════════════════
+# STAGING
+# ═══════════════════════════════════════════════════════
+models:
+  - name: stg_telemetry
+    description: "Cleaned view over raw telemetry. One row per 2-minute machine reading."
+    columns:
+      - name: recorded_at
+        tests: [not_null]
+      - name: machine_id
+        tests: [not_null]
+      - name: is_anomaly
+        tests: [not_null]
+      - name: failure_predicted_24h
+        tests: [not_null]
+
+  - name: stg_failures
+    description: "139 discrete failure events with machine state at time of failure."
+    columns:
+      - name: failure_id
+        tests: [not_null, unique]
+      - name: machine_id
+        tests: [not_null]
+      - name: occurred_at
+        tests: [not_null]
+
+  - name: stg_maintenance
+    description: "552 maintenance events, planned and reactive."
+    columns:
+      - name: maintenance_id
+        tests: [not_null, unique]
+      - name: machine_id
+        tests: [not_null]
+      - name: is_planned
+        tests: [not_null]
+
+  - name: stg_orders
+    description: "31,324 production orders with planned vs actual timing."
+    columns:
+      - name: order_id
+        tests: [not_null, unique]
+      - name: is_delayed
+        tests: [not_null]
+
+  - name: stg_demand
+    description: "365 daily demand forecast rows."
+    columns:
+      - name: demand_date
+        tests: [not_null, unique]
+      - name: expected_total_tons
+        tests: [not_null]
+
+# ═══════════════════════════════════════════════════════
+# INTERMEDIATE
+# ═══════════════════════════════════════════════════════
+  - name: int_telemetry_enriched
+    description: >
+      Telemetry joined with orders, failures, maintenance, and demand.
+      Grain: one row per telemetry reading. The foundation for all marts.
+      Partitioned by recording_date, clustered by machine_id.
+    columns:
+      - name: recorded_at
+        tests: [not_null]
+      - name: machine_id
+        tests: [not_null]
+      - name: is_anomaly
+        tests: [not_null]
+
+# ═══════════════════════════════════════════════════════
+# MARTS
+# ═══════════════════════════════════════════════════════
+  - name: mart_machine_health
+    description: >
+      Daily machine health summary: availability, anomaly rate, composite
+      health score (avg of 4 component health scores), 7-day rolling health,
+      and operational pressure context.
+    columns:
+      - name: recording_date
+        tests: [not_null]
+      - name: machine_id
+        tests: [not_null]
+      - name: composite_health_score
+        tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: health_status
+        tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['healthy', 'warning', 'critical']
+      - name: availability_rate
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+
+  - name: mart_failure_analysis
+    description: >
+      One row per failure event enriched with 24h pre-failure machine state,
+      operational pressure, and post-failure maintenance response time.
+      Powers root-cause breakdown and failure predictability analysis.
+    columns:
+      - name: failure_id
+        tests: [not_null, unique]
+      - name: machine_id
+        tests: [not_null]
+      - name: was_predicted
+        tests: [not_null]
+
+  - name: mart_production_performance
+    description: >
+      Monthly production performance by machine, market, and steel grade.
+      Joins order completion rates against daily demand forecasts to
+      calculate production vs forecast ratio and schedule adherence.
+    columns:
+      - name: month_date
+        tests: [not_null]
+      - name: machine_id
+        tests: [not_null]
+      - name: completion_rate
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1
+      - name: delay_rate
+        tests:
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: 0
+                max_value: 1

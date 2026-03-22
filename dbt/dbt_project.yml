@@ -1,0 +1,39 @@
+name: 'industrial_twin'
+version: '1.0.0'
+config-version: 2
+
+profile: 'industrial_twin'
+
+model-paths:    ["models"]
+analysis-paths: ["analyses"]
+test-paths:     ["tests"]
+seed-paths:     ["seeds"]
+macro-paths:    ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  industrial_twin:
+
+    # Staging: lightweight views over raw BQ tables
+    staging:
+      +materialized: view
+      +dataset: industrial_twin_prod
+
+    # Intermediate: reusable aggregation building blocks
+    intermediate:
+      +materialized: table
+      +dataset: industrial_twin_prod
+
+    # Marts: final analytics-ready tables for dashboarding
+    marts:
+      +materialized: table
+      +dataset: industrial_twin_prod
+      +partition_by:
+        field: "date"
+        data_type: "date"
+        granularity: "day"
+      +cluster_by: ["machine_id", "sensor_type"]
