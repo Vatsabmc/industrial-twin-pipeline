@@ -3,7 +3,7 @@ version: 2
 sources:
   - name: industrial_twin_raw
     description: "5 raw tables written by the Spark batch job"
-    database: "{{ env_var('DBT_PROJECT_ID', 'industrial-twin-pipeline') }}"
+    database: "{{ env_var('DBT_PROJECT_ID', 'industrial-digital-twin') }}"
     schema: industrial_twin_raw
     tables:
 
