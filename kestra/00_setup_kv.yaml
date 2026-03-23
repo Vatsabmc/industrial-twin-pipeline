@@ -1,0 +1,52 @@
+# -------------------------------------------------------
+# 00_setup_kv.yaml
+# Run this ONCE to populate Kestra's KV Store with your
+# GCP and Kaggle credentials and project config.
+# Never commit actual credentials to Git.
+# -------------------------------------------------------
+id: 00_setup_kv
+namespace: industrial_twin
+
+tasks:
+  - id: set_gcp_project_id
+    type: io.kestra.plugin.core.kv.Set
+    key: GCP_PROJECT_ID
+    value: "industrial-twin-pipeline"
+
+  - id: set_gcp_location
+    type: io.kestra.plugin.core.kv.Set
+    key: GCP_LOCATION
+    value: "EU"
+
+  - id: set_gcp_bucket
+    type: io.kestra.plugin.core.kv.Set
+    key: GCP_BUCKET_NAME
+    value: "it_datalake_industrial-twin-pipeline"
+
+  - id: set_bq_raw_dataset
+    type: io.kestra.plugin.core.kv.Set
+    key: GCP_BQ_RAW_DATASET
+    value: "industrial_twin_raw"
+
+  - id: set_dataproc_region
+    type: io.kestra.plugin.core.kv.Set
+    key: GCP_DATAPROC_REGION
+    value: "europe-west1"
+
+  - id: set_kaggle_dataset
+    type: io.kestra.plugin.core.kv.Set
+    key: KAGGLE_DATASET_SLUG
+    # Find this in the Kaggle dataset URL:
+    # https://www.kaggle.com/datasets/<owner>/<dataset-name>
+    value: "aiwithcagri/industrial-digital-twin-dataset-1-year"
+
+  - id: set_kaggle_token
+    type: io.kestra.plugin.core.kv.Set
+    key: KAGGLE_TOKEN
+    # Get your token from kaggle.com/settings → API → Create New Token
+    # Copy the token string shown after creation and paste it here
+    value: "<YOUR_KAGGLE_TOKEN>"
+
+# GCP_SERVICE_ACCOUNT must be set manually in the Kestra UI:
+# Namespaces → industrial_twin → KV Store → New entry
+# Key: GCP_SERVICE_ACCOUNT  Value: paste full JSON content of my-creds.json

@@ -1,0 +1,216 @@
+# -------------------------------------------------------
+# 01_industrial_twin_pipeline_git.yaml
+#
+# Variant of the main pipeline that pulls dbt project files
+# directly from a Git repository before running dbt.
+#
+# Flow:
+#   1. Download files from Kaggle and upload to GCS
+#   2. Submit PySpark Serverless batch on Dataproc (all 5 -> BQ)
+#   3. Clone repository from Git
+#   4. Run dbt from cloned repo
+#   5. Purge temp files
+# -------------------------------------------------------
+id: 01_industrial_twin_pipeline
+namespace: industrial_twin
+
+description: |
+  Yearly batch pipeline for the Industrial Digital Twin dataset.
+  Downloads parquet files from Kaggle, uploads to GCS, runs Spark
+  Serverless on Dataproc, then clones a Git repo and runs dbt from
+  the cloned dbt project.
+
+labels:
+  project: industrial-twin
+  env: production
+  mode: git-dbt
+
+concurrency:
+  limit: 1
+
+inputs:
+  - id: year
+    type: STRING
+    displayName: "Processing year (e.g. 2025)"
+    defaults: "2025"
+
+  - id: git_repo_url
+    type: STRING
+    displayName: "Git repository URL"
+    defaults: "https://github.com/vatsabmc/industrial-twin-pipeline.git"
+
+  - id: git_ref
+    type: STRING
+    displayName: "Git ref (branch/tag/commit)"
+    defaults: "main"
+
+variables:
+  gcs_raw_prefix:   "raw/year={{inputs.year}}"
+  gcs_spark_script: "code/transform.py"
+
+pluginDefaults:
+  - type: io.kestra.plugin.gcp
+    values:
+      serviceAccount: "{{kv('GCP_SERVICE_ACCOUNT')}}"
+      projectId:      "{{kv('GCP_PROJECT_ID')}}"
+      location:       "{{kv('GCP_LOCATION')}}"
+
+tasks:
+
+  # Step 1: Download from Kaggle and upload to GCS
+  - id: download_and_upload_to_gcs
+    type: io.kestra.plugin.scripts.shell.Commands
+    containerImage: python:3.11-slim
+    commands:
+      - pip install --quiet kaggle google-cloud-storage
+      # Download and unzip dataset into /tmp/kaggle_data
+      # KAGGLE_TOKEN env var is the new auth method (no kaggle.json needed)
+      - KAGGLE_TOKEN={{kv('KAGGLE_TOKEN')}} kaggle datasets download -d {{kv('KAGGLE_DATASET_SLUG')}} --unzip -p /tmp/kaggle_data
+
+      # List downloaded files so we can verify in the logs
+      - ls -lh /tmp/kaggle_data/
+
+      # Upload all 5 files to GCS
+      # Credentials are passed as an env var to avoid shell escaping issues
+      # with the private key newlines in the JSON
+      - |
+        GCP_SERVICE_ACCOUNT_JSON='{{kv("GCP_SERVICE_ACCOUNT")}}'         GCP_PROJECT="{{kv('GCP_PROJECT_ID')}}"         GCP_BUCKET="{{kv('GCP_BUCKET_NAME')}}"         YEAR="{{inputs.year}}"         GCS_PREFIX="{{render(vars.gcs_raw_prefix)}}"         python3 - << 'PYEOF'
+        import os, json
+        from google.cloud import storage
+        from google.oauth2 import service_account
+
+        raw        = os.environ["GCP_SERVICE_ACCOUNT_JSON"]
+        project    = os.environ["GCP_PROJECT"]
+        bucket_name= os.environ["GCP_BUCKET"]
+        year       = os.environ["YEAR"]
+        prefix     = os.environ["GCS_PREFIX"]
+
+        creds_dict = json.loads(raw)
+        creds  = service_account.Credentials.from_service_account_info(creds_dict)
+        client = storage.Client(project=project, credentials=creds)
+        bucket = client.bucket(bucket_name)
+
+        tables = ["telemetry", "failures", "maintenance", "orders", "demand"]
+        year   = "{{inputs.year}}"
+        prefix = "{{vars.gcs_raw_prefix}}"
+
+        for table in tables:
+            filename  = f"{table}_{year}.parquet"
+            local     = f"/tmp/kaggle_data/{filename}"
+            blob_name = f"{prefix}/{filename}"
+            if not os.path.exists(local):
+                raise FileNotFoundError(f"Expected file not found: {local}")
+            print(f"Uploading {filename} -> gs://{{kv('GCP_BUCKET_NAME')}}/{blob_name}")
+            bucket.blob(blob_name).upload_from_filename(local)
+
+        print("All 5 files uploaded successfully.")
+        PYEOF
+    
+# ── Step 2: Delete existing year data from unpartitioned tables ───
+  # Runs before Spark so re-running the pipeline for the same year
+  # is idempotent.
+  - id: delete_year_data
+    type: io.kestra.plugin.gcp.bigquery.Query
+    sql: |
+      BEGIN
+        -- If year column exists: delete only this year's rows (safe multi-year).
+        -- Otherwise: drop the table entirely so Spark recreates it with the
+        -- correct schema including the year column.
+        IF EXISTS (
+          SELECT 1 FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.INFORMATION_SCHEMA.COLUMNS`
+          WHERE table_name = 'failures' AND column_name = 'year'
+        ) THEN
+          DELETE FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.failures`
+          WHERE year = CAST({{inputs.year}} AS INT64);
+        ELSE
+          DROP TABLE IF EXISTS `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.failures`;
+        END IF;
+ 
+        IF EXISTS (
+          SELECT 1 FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.INFORMATION_SCHEMA.COLUMNS`
+          WHERE table_name = 'maintenance' AND column_name = 'year'
+        ) THEN
+          DELETE FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.maintenance`
+          WHERE year = CAST({{inputs.year}} AS INT64);
+        ELSE
+          DROP TABLE IF EXISTS `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.maintenance`;
+        END IF;
+ 
+        IF EXISTS (
+          SELECT 1 FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.INFORMATION_SCHEMA.COLUMNS`
+          WHERE table_name = 'orders' AND column_name = 'year'
+        ) THEN
+          DELETE FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.orders`
+          WHERE year = CAST({{inputs.year}} AS INT64);
+        ELSE
+          DROP TABLE IF EXISTS `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.orders`;
+        END IF;
+ 
+        IF EXISTS (
+          SELECT 1 FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.INFORMATION_SCHEMA.COLUMNS`
+          WHERE table_name = 'demand' AND column_name = 'year'
+        ) THEN
+          DELETE FROM `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.demand`
+          WHERE year = CAST({{inputs.year}} AS INT64);
+        ELSE
+          DROP TABLE IF EXISTS `{{kv('GCP_PROJECT_ID')}}.industrial_twin_raw.demand`;
+        END IF;
+      END;
+
+  # Step 3: Submit Spark batch on Dataproc Serverless
+  - id: submit_spark_batch
+    type: io.kestra.plugin.gcp.dataproc.batches.PySparkSubmit
+    name: "industrial-twin-{{inputs.year}}-{{execution.startDate | date('yyyyMMdd-HHmmss')}}"
+    region: "{{kv('GCP_DATAPROC_REGION')}}"
+    mainPythonFileUri: "gs://{{kv('GCP_BUCKET_NAME')}}/{{vars.gcs_spark_script}}"
+    args:
+      - "--input_prefix=gs://{{kv('GCP_BUCKET_NAME')}}/{{render(vars.gcs_raw_prefix)}}"
+      - "--project={{kv('GCP_PROJECT_ID')}}"
+      - "--dataset=industrial_twin_raw"
+      - "--temp_bucket={{kv('GCP_BUCKET_NAME')}}"
+      - "--year={{inputs.year}}"
+
+  # Step 4: Clone repository and run dbt from one working directory
+  - id: dbt_from_git
+    type: io.kestra.plugin.core.flow.WorkingDirectory
+    tasks:
+      - id: clone_repository
+        type: io.kestra.plugin.git.Clone
+        url: "{{inputs.git_repo_url}}"
+        branch: "{{inputs.git_ref}}"
+
+      - id: dbt_run
+        type: io.kestra.plugin.dbt.cli.DbtCLI
+        containerImage: ghcr.io/kestra-io/dbt-bigquery:latest
+        inputFiles:
+          sa.json: "{{kv('GCP_SERVICE_ACCOUNT')}}"
+        profiles: |
+          industrial_twin:
+            target: prod
+            outputs:
+              prod:
+                type: bigquery
+                method: service-account
+                project: "{{kv('GCP_PROJECT_ID')}}"
+                dataset: industrial_twin_prod
+                location: "{{kv('GCP_LOCATION')}}"
+                keyfile: sa.json
+                threads: 4
+                timeout_seconds: 300
+        commands:
+          - dbt deps --project-dir dbt
+          - dbt run --target prod --project-dir dbt
+          - dbt test --target prod --project-dir dbt
+
+  # Step 5: Cleanup
+  - id: purge_temp_files
+    type: io.kestra.plugin.core.storage.PurgeCurrentExecutionFiles
+
+triggers:
+  - id: yearly_schedule
+    type: io.kestra.plugin.core.trigger.Schedule
+    cron: "0 6 2 1 *"
+    inputs:
+      year: "{{trigger.date | date('yyyy')}}"
+      git_repo_url: "https://github.com/vatsabmc/industrial-twin-pipeline.git"
+      git_ref: "main"

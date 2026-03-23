@@ -1,0 +1,36 @@
+services:
+  kestra:
+    image: kestra/kestra:latest-full
+    pull_policy: always
+    user: "root"
+    command: server local
+    volumes:
+      - kestra_data:/app/storage
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /tmp/kestra-wd:/tmp/kestra-wd
+      - ../data:/data                          # Parquet files available at /data inside container
+      - ../dbt:/dbt
+    environment:
+      KESTRA_CONFIGURATION: |
+        kestra:
+          server:
+            basicAuth:
+              enabled: false
+          repository:
+            type: memory
+          storage:
+            type: local
+            local:
+              basePath: "/app/storage"
+          queue:
+            type: memory
+          tasks:
+            tmpDir:
+              path: /tmp/kestra-wd/tmp
+          url: http://localhost:8080/
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+
+volumes:
+  kestra_data:
