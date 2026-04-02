@@ -1,13 +1,25 @@
 # Industrial Twin Pipeline
 
-DE Zoomcamp final project: an end-to-end batch pipeline on GCP that processes 5 industrial datasets and serves analytics-ready marts for dashboards.
+This repository contains a Data Engineering Zoomcamp final project: an end-to-end batch analytics pipeline on GCP built around a simulated industrial digital twin for a steel rolling/milling line.
+
+The project implements the full DE lifecycle expected in the Zoomcamp capstone: infrastructure as code, orchestrated ingestion, cloud batch processing, warehouse modeling, and dashboard-ready serving layers. Starting from raw parquet files, the pipeline lands data in GCS, transforms and loads curated raw tables with PySpark on Dataproc Serverless, models analytical layers with dbt in BigQuery, and publishes business-facing marts for BI consumption.
+
+Reference links:
+- Dataset source (Kaggle): https://www.kaggle.com/datasets/aiwithcagri/industrial-digital-twin-dataset-1-year
 
 ## What This Project Does
 
-This project answers operational questions for a steel plant, such as:
+The underlying dataset represents a 1-year simulation at 10-minute granularity for 5 mills (Mill_01-Mill_05), including telemetry, demand, orders, maintenance, and failures. This project operationalizes that data into a reproducible analytics workflow that could answer core operational questions for a steel plant, such as:
 - Which machines are degrading over time?
 - Which failure categories and root causes are most frequent?
 - Do demand pressure and rush factor correlate with delays and failures?
+
+The report visuals are designed to answer these questions directly:
+- KPI scorecards (AVG Health Score, Total Failures, AVG Completion Rate) provide a fast plant-level baseline for reliability and fulfillment.
+- Composite health trend over time shows whether overall machine condition is improving, stable, or degrading.
+- Expected vs produced tons by month highlights output gaps and where demand may be outpacing production.
+- Rolling 7-day health by machine helps compare mills and identify which assets deteriorate first.
+- Health status distribution by machine (critical/warning/healthy) pinpoints where risk is concentrated.
 
 Pipeline flow:
 1. Upload 5 parquet files to GCS.
@@ -31,6 +43,9 @@ Pipeline flow:
 
 
 ## Datasets
+
+Primary data source:
+- Kaggle - Industrial Digital Twin Dataset 1 Year: https://www.kaggle.com/datasets/aiwithcagri/industrial-digital-twin-dataset-1-year
 
 The pipeline processes these files for year 2025:
 - telemetry_2025.parquet
@@ -309,6 +324,17 @@ Connect BigQuery dataset industrial_twin_prod and use:
 - mart_machine_health
 - mart_failure_analysis
 - mart_production_performance
+
+Dashboard overview (Executive Overview page):
+- Top KPI cards summarize overall health, failure volume, and completion performance.
+- Filter controls (date range, machine, failure category, market) let users slice metrics by operational context.
+- Time-series and comparison charts show health evolution, production gap, and machine-level status distribution.
+
+These visuals support day-to-day questions such as:
+- Are we meeting expected production by period?
+- Which machines need preventive action now?
+- Is reliability improving after maintenance cycles?
+- Which failure patterns should be prioritized for root-cause analysis?
 
 Current report link: [Industrial Twin Dashboard](https://lookerstudio.google.com/reporting/21a03fd6-503d-449a-81d7-c3d3487f8012)
 
