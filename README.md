@@ -317,6 +317,15 @@ SELECT COUNT(*) AS cnt FROM `industrial-digital-twin.industrial_twin_prod.mart_f
 SELECT COUNT(*) AS cnt FROM `industrial-digital-twin.industrial_twin_prod.mart_production_performance`;
 ```
 
+## Why Partitioning and Clustering
+
+The mart tables are partitioned and clustered to reduce scan cost and improve performance for common dashboard filters.
+
+- mart_machine_health: partitioned by recording_date and clustered by machine_id, because most queries filter by date range and drill into one machine.
+- mart_failure_analysis: partitioned by occurrence_date and clustered by machine_id, failure_category, because failure investigations are typically time-bound and grouped by machine/category.
+- mart_production_performance: partitioned by month_date and clustered by machine_id, market, because production tracking is usually monthly and segmented by machine/market.
+
+In the raw ingestion layer, Spark writes telemetry as a date-partitioned BigQuery table to support year/date scoped reloads and avoid rewriting unrelated partitions.
 
 ## Looker Studio
 
@@ -339,6 +348,7 @@ These visuals support day-to-day questions such as:
 Current report link: [Industrial Twin Dashboard](https://lookerstudio.google.com/reporting/21a03fd6-503d-449a-81d7-c3d3487f8012)
 
 ![Dashboard](images/Industrial_Twin_Dashboard.png)
+
 
 
 
